@@ -1,0 +1,99 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.bak
+
+# SSL certificates and keys
+config/ssl/*.pem
+config/ssl/*.key
+config/ssl/*.crt
+
+# Docker volumes and data
+data/
+volumes/
+
+# Logs
+logs/
+*.log
+docker/nginx/logs/
+
+# Backup files
+*.sql
+*.tar.gz
+backup/
+backups/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules (if we add Node.js later)
+node_modules/
+npm-debug.log*
+
+# Python cache (for future ETL development)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.pytest_cache/
+
+# Jupyter notebooks (for future analysis)
+.ipynb_checkpoints
+
+# Documentation build
+docs/_build/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Metabase specific
+metabase.jar
+plugins/
+metabase-data/
+
+# SSL Let's Encrypt
+.well-known/
+
+# Local development overrides
+docker-compose.override.yml
+docker-compose.local.yml

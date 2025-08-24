@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: bw-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-metabase}
+      POSTGRES_USER: ${POSTGRES_USER:-metabase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-metabase_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/database/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - bw-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-metabase}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: bw-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - bw-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Metabase
+  metabase:
+    image: metabase/metabase:latest
+    container_name: bw-metabase
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: ${POSTGRES_DB:-metabase}
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${POSTGRES_USER:-metabase}
+      MB_DB_PASS: ${POSTGRES_PASSWORD:-metabase_password}
+      MB_DB_HOST: postgres
+      MB_ENCRYPTION_SECRET_KEY: ${MB_ENCRYPTION_SECRET_KEY:-your-secret-key-here}
+      MB_SITE_URL: ${MB_SITE_URL:-https://StoreMgnt.Beachwood.me}
+      MB_SITE_NAME: "Beachwood Store Management"
+      MB_ADMIN_EMAIL: ${MB_ADMIN_EMAIL:-admin@beachwood.me}
+      MB_CHECK_FOR_UPDATES: false
+      JAVA_OPTS: "-Xmx2g"
+    volumes:
+      - metabase_data:/metabase-data
+      - ./docker/metabase/plugins:/plugins
+    ports:
+      - "${METABASE_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - bw-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Reverse Proxy
+  nginx:
+    build:
+      context: ./docker/nginx
+      dockerfile: Dockerfile
+    container_name: bw-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./config/ssl:/etc/ssl/certs
+      - ./docker/nginx/logs:/var/log/nginx
+    depends_on:
+      metabase:
+        condition: service_healthy
+    networks:
+      - bw-network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  bw-network:
+    driver: bridge
+    name: bw-metabase-network
+
+volumes:
+  postgres_data:
+    driver: local
+    name: bw-postgres-data
+  redis_data:
+    driver: local
+    name: bw-redis-data
+  metabase_data:
+    driver: local
+    name: bw-metabase-data
