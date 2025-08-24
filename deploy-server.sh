@@ -47,26 +47,30 @@ install_docker() {
         print_step "Installing Docker..."
         
         # Update package index
-        apt-get update
+        sudo apt-get update
         
         # Install prerequisites
-        apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+        sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
         
         # Add Docker's official GPG key
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
         
         # Set up stable repository
-        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
         
         # Install Docker Engine
-        apt-get update
-        apt-get install -y docker-ce docker-ce-cli containerd.io
+        sudo apt-get update
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io
         
         # Start and enable Docker
-        systemctl start docker
-        systemctl enable docker
+        sudo systemctl start docker
+        sudo systemctl enable docker
+        
+        # Add current user to docker group
+        sudo usermod -aG docker $USER
         
         print_status "Docker installed successfully ✓"
+        print_warning "Please log out and back in for Docker group membership to take effect"
     else
         print_status "Docker already installed ✓"
     fi
@@ -77,14 +81,14 @@ install_docker_compose() {
     if ! command -v docker-compose &> /dev/null; then
         print_step "Installing Docker Compose..."
         
-        # Download latest version
-        curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        # Download latest version with proper permissions
+        sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
         
         # Make executable
-        chmod +x /usr/local/bin/docker-compose
+        sudo chmod +x /usr/local/bin/docker-compose
         
         # Create symlink
-        ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+        sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
         
         print_status "Docker Compose installed successfully ✓"
     else
@@ -98,28 +102,28 @@ setup_firewall() {
     
     # Install ufw if not present
     if ! command -v ufw &> /dev/null; then
-        apt-get install -y ufw
+        sudo apt-get install -y ufw
     fi
     
     # Reset firewall to defaults
-    ufw --force reset
+    sudo ufw --force reset
     
     # Set default policies
-    ufw default deny incoming
-    ufw default allow outgoing
+    sudo ufw default deny incoming
+    sudo ufw default allow outgoing
     
     # Allow SSH (important - don't lock yourself out!)
-    ufw allow 22/tcp
+    sudo ufw allow 22/tcp
     
     # Allow HTTP and HTTPS
-    ufw allow 80/tcp
-    ufw allow 443/tcp
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
     
     # Enable firewall
-    ufw --force enable
+    sudo ufw --force enable
     
     print_status "Firewall configured ✓"
-    ufw status
+    sudo ufw status
 }
 
 # Setup production environment
@@ -160,15 +164,15 @@ create_directories() {
     print_step "Creating application directories..."
     
     # Create directory structure
-    mkdir -p /opt/bw-metabase
-    mkdir -p /opt/bw-metabase/data/{postgres,redis,metabase}
-    mkdir -p /opt/bw-metabase/logs
-    mkdir -p /opt/bw-metabase/backups
-    mkdir -p /var/log/bw-metabase
+    sudo mkdir -p /opt/bw-metabase
+    sudo mkdir -p /opt/bw-metabase/data/{postgres,redis,metabase}
+    sudo mkdir -p /opt/bw-metabase/logs
+    sudo mkdir -p /opt/bw-metabase/backups
+    sudo mkdir -p /var/log/bw-metabase
     
     # Set proper permissions
-    chown -R $USER:$USER /opt/bw-metabase
-    chmod -R 755 /opt/bw-metabase
+    sudo chown -R $USER:$USER /opt/bw-metabase
+    sudo chmod -R 755 /opt/bw-metabase
     
     print_status "Directories created ✓"
 }
