@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data and logs directories
+RUN mkdir -p /app/data /app/logs
 
-CMD ["python", "etl_main.py"]
+CMD ["python", "bi_daily_import.py"]
