@@ -77,6 +77,31 @@ services:
       timeout: 10s
       retries: 3
 
+  # ETL Service for OneDrive/SharePoint data import
+  etl:
+    build:
+      context: ./docker/etl
+      dockerfile: Dockerfile
+    container_name: bw-etl
+    restart: "no"  # Manual execution only
+    environment:
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
+      SHAREPOINT_URL: ${SHAREPOINT_URL}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: bw_sample_data
+      DB_USER: ${POSTGRES_USER:-metabase}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./docker/etl/data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bw-network
+
   # Nginx Reverse Proxy
   nginx:
     build:
