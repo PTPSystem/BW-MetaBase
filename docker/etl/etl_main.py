@@ -285,14 +285,100 @@ class SharePointETL:
                     # List files in each drive
                     self.list_drive_files(site_id, drive['id'], headers)
                     
-                return True
             else:
                 print(f"❌ Cannot access drives: {drives_response.text}")
-                return False
+                
+            # Also try to explore site lists and libraries
+            self.explore_site_lists(site_id, headers)
+            
+            # Try to find subsites
+            self.explore_subsites(site_id, headers)
+                
+            return True
                 
         except Exception as e:
             print(f"❌ Error exploring drives: {str(e)}")
             return False
+
+    def explore_site_lists(self, site_id, headers):
+        """Explore SharePoint lists and libraries"""
+        try:
+            print(f"📋 Exploring site lists...")
+            lists_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/lists"
+            lists_response = requests.get(lists_url, headers=headers)
+            
+            if lists_response.status_code == 200:
+                lists = lists_response.json()
+                print(f"📚 Found {len(lists.get('value', []))} lists:")
+                
+                for list_item in lists.get('value', []):
+                    list_name = list_item.get('displayName', 'Unknown')
+                    list_template = list_item.get('list', {}).get('template', 'Unknown')
+                    print(f"  📃 {list_name} ({list_template})")
+                    
+                    # If it's a document library, explore it
+                    if list_template == 'documentLibrary':
+                        self.explore_list_items(site_id, list_item['id'], headers)
+                        
+            else:
+                print(f"❌ Cannot access lists: {lists_response.text}")
+                
+        except Exception as e:
+            print(f"❌ Error exploring lists: {str(e)}")
+
+    def explore_subsites(self, site_id, headers):
+        """Explore subsites"""
+        try:
+            print(f"🏢 Looking for subsites...")
+            subsites_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/sites"
+            subsites_response = requests.get(subsites_url, headers=headers)
+            
+            if subsites_response.status_code == 200:
+                subsites = subsites_response.json()
+                print(f"🏗️ Found {len(subsites.get('value', []))} subsites:")
+                
+                for subsite in subsites.get('value', []):
+                    subsite_name = subsite.get('displayName', 'Unknown')
+                    subsite_url = subsite.get('webUrl', 'No URL')
+                    print(f"  🏢 {subsite_name} - {subsite_url}")
+                    
+                    # If it looks like ITProject, explore it
+                    if 'ITProject' in subsite_name or 'ITProject' in subsite_url:
+                        print(f"🎯 Found ITProject subsite: {subsite_name}")
+                        self.explore_site_drives(subsite['id'], headers)
+                        
+            else:
+                print(f"❌ Cannot access subsites: {subsites_response.text}")
+                
+        except Exception as e:
+            print(f"❌ Error exploring subsites: {str(e)}")
+
+    def explore_list_items(self, site_id, list_id, headers):
+        """Explore items in a SharePoint list"""
+        try:
+            items_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/lists/{list_id}/items"
+            items_response = requests.get(items_url, headers=headers)
+            
+            if items_response.status_code == 200:
+                items = items_response.json()
+                print(f"    📄 Found {len(items.get('value', []))} items in list:")
+                
+                for item in items.get('value', []):
+                    # Try to get the driveItem for file details
+                    if 'driveItem' in item:
+                        drive_item = item['driveItem']
+                        item_name = drive_item.get('name', 'Unknown')
+                        item_size = drive_item.get('size', 0)
+                        print(f"      📄 {item_name} ({item_size} bytes)")
+                        
+                        if item_name.endswith(('.xlsx', '.xls')):
+                            print(f"      🎯 Excel file found!")
+                            
+            else:
+                print(f"    ❌ Cannot access list items: {items_response.status_code}")
+                
+        except Exception as e:
+            print(f"    ❌ Error exploring list items: {str(e)}")
 
     def list_drive_files(self, site_id, drive_id, headers):
         """List files in a SharePoint drive"""
