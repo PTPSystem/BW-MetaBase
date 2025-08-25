@@ -180,9 +180,25 @@ class SharePointETL:
                 password=self.db_password
             )
             
-            # Clean column names for PostgreSQL
-            df.columns = [col.lower().replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '') 
-                         for col in df.columns]
+            # Clean column names for PostgreSQL (more aggressive cleaning)
+            import re
+            cleaned_columns = []
+            for col in df.columns:
+                # Convert to string first
+                col_str = str(col)
+                # Replace problematic characters and patterns
+                cleaned = re.sub(r'[^a-zA-Z0-9_]', '_', col_str)  # Replace non-alphanumeric with underscore
+                cleaned = re.sub(r'^[0-9]', 'col_\\g<0>', cleaned)  # Prefix numbers with 'col_'
+                cleaned = re.sub(r'_+', '_', cleaned)  # Replace multiple underscores with single
+                cleaned = cleaned.strip('_').lower()  # Remove leading/trailing underscores and lowercase
+                
+                # Ensure it's not empty and not a PostgreSQL reserved word
+                if not cleaned or cleaned in ['user', 'order', 'group', 'table', 'index']:
+                    cleaned = f'column_{len(cleaned_columns)}'
+                
+                cleaned_columns.append(cleaned)
+            
+            df.columns = cleaned_columns
             
             # Add import timestamp
             df['import_timestamp'] = datetime.now()
