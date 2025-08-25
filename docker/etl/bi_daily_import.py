@@ -6,6 +6,7 @@ Daily import of BI Dimensions and BI At Scale Import files from SharePoint to Po
 
 import os
 import sys
+import re
 import pandas as pd
 import psycopg2
 from msal import ConfidentialClientApplication
@@ -36,12 +37,14 @@ class SharePointETL:
             {
                 'filename': 'BI Dimensions.xlsx',
                 'path': 'General/BI Import/BI Dimensions.xlsx',
-                'table_name': 'bi_dimensions'
+                'table_name': 'bi_dimensions',
+                'import_type': 'multi_sheet'  # This file has multiple sheets to import
             },
             {
                 'filename': 'BI At Scale Import.xlsx',
                 'path': 'General/BI Import/BI At Scale Import.xlsx',
-                'table_name': 'bi_at_scale_import'
+                'table_name': 'bi_at_scale_import',
+                'import_type': 'single_sheet'  # This is a single sheet file
             }
         ]
         
@@ -162,14 +165,104 @@ class SharePointETL:
             print(f"❌ Error downloading {filename}: {str(e)}")
             return None
 
-    def import_excel_to_postgres(self, file_path, table_name):
-        """Import Excel file to PostgreSQL"""
+    def import_excel_to_postgres(self, file_path, file_info):
+        """Import Excel file to PostgreSQL with proper column handling"""
         try:
-            print(f"📊 Importing {file_path} to table {table_name}...")
+            print(f"📊 Importing {file_info['filename']} to PostgreSQL...")
             
-            # Read Excel file
-            df = pd.read_excel(file_path)
-            print(f"📄 Loaded {len(df)} rows, {len(df.columns)} columns")
+            if file_info['import_type'] == 'multi_sheet':
+                # Handle multi-sheet files (BI Dimensions)
+                return self.import_multi_sheet_excel(file_path, file_info)
+            else:
+                # Handle single sheet files (BI At Scale Import)
+                return self.import_single_sheet_excel(file_path, file_info)
+                
+        except Exception as e:
+            print(f"❌ Error importing {file_info['filename']}: {str(e)}")
+            return False
+
+    def import_multi_sheet_excel(self, file_path, file_info):
+        """Import all sheets from a multi-sheet Excel file"""
+        try:
+            # First, get all sheet names
+            excel_file = pd.ExcelFile(file_path)
+            sheet_names = excel_file.sheet_names
+            print(f"📋 Found {len(sheet_names)} sheets in {file_info['filename']}: {sheet_names}")
+            
+            success_count = 0
+            for i, sheet_name in enumerate(sheet_names):
+                try:
+                    # Create table name from base name and sheet name
+                    clean_sheet_name = re.sub(r'[^a-zA-Z0-9]', '_', sheet_name.lower())
+                    table_name = f"{file_info['table_name']}_{clean_sheet_name}"
+                    
+                    print(f"� Processing sheet '{sheet_name}' -> table '{table_name}'")
+                    
+                    # Read the sheet
+                    df = pd.read_excel(file_path, sheet_name=sheet_name)
+                    
+                    if df.empty:
+                        print(f"⚠️ Sheet '{sheet_name}' is empty, skipping...")
+                        continue
+                    
+                    # Import this sheet to database
+                    if self.import_dataframe_to_db(df, table_name):
+                        success_count += 1
+                        print(f"✅ Successfully imported sheet '{sheet_name}' ({len(df)} rows) to table '{table_name}'")
+                    else:
+                        print(f"❌ Failed to import sheet '{sheet_name}'")
+                    
+                except Exception as e:
+                    print(f"❌ Error processing sheet '{sheet_name}': {str(e)}")
+                    continue
+            
+            print(f"📊 Multi-sheet import summary: {success_count}/{len(sheet_names)} sheets imported successfully")
+            return success_count > 0
+                    
+        except Exception as e:
+            print(f"❌ Error reading multi-sheet Excel file: {str(e)}")
+            return False
+
+    def import_single_sheet_excel(self, file_path, file_info):
+        """Import a single sheet Excel file"""
+        try:
+            table_name = file_info['table_name']
+            filename = file_info['filename']
+            
+            # Read Excel file with specific handling for each file type
+            print(f"🔍 Processing file: {filename}")
+            if 'BI At Scale Import' in filename:
+                # BI At Scale Import: Row 4 has column headers, data starts at row 5
+                print("📋 Using row 4 as headers for BI At Scale Import file")
+                df = pd.read_excel(file_path, skiprows=3, header=0)  # Skip 3 rows, use row 4 as header
+                print(f"📄 Loaded {len(df)} rows, {len(df.columns)} columns (headers from row 4)")
+                print(f"📝 Column names: {list(df.columns)[:5]}...")  # Show first 5 column names
+            else:
+                # Other files start at row 1
+                print("📋 Reading file from row 1")
+                df = pd.read_excel(file_path)
+                print(f"📄 Loaded {len(df)} rows, {len(df.columns)} columns")
+            
+            if df.empty:
+                print(f"⚠️ File {filename} is empty, skipping...")
+                return False
+            
+            # Import to database
+            return self.import_dataframe_to_db(df, table_name)
+            
+        except Exception as e:
+            print(f"❌ Error importing single sheet Excel file: {str(e)}")
+            return False
+
+    def import_dataframe_to_db(self, df, table_name):
+        """Import a pandas DataFrame to PostgreSQL"""
+        try:
+            # Handle NaT (Not a Time) values and other problematic data
+            # Replace NaT with None for proper NULL handling
+            df = df.replace({pd.NaT: None})
+            
+            # Replace NaN with None for proper NULL handling
+            df = df.where(pd.notnull(df), None)
             
             # Connect to PostgreSQL
             conn = psycopg2.connect(
@@ -181,7 +274,6 @@ class SharePointETL:
             )
             
             # Clean column names for PostgreSQL (more aggressive cleaning)
-            import re
             cleaned_columns = []
             for col in df.columns:
                 # Convert to string first
@@ -227,19 +319,23 @@ class SharePointETL:
             
             # Insert data
             for index, row in df.iterrows():
-                placeholders = ', '.join(['%s'] * len(row))
+                # Convert NaT and NaN to None for SQL NULL
+                clean_row = []
+                for value in row:
+                    if pd.isna(value) or (hasattr(value, '__str__') and str(value) == 'NaT'):
+                        clean_row.append(None)
+                    else:
+                        clean_row.append(value)
+                
+                placeholders = ', '.join(['%s'] * len(clean_row))
                 insert_sql = f"INSERT INTO {table_name} VALUES ({placeholders})"
-                cursor.execute(insert_sql, tuple(row))
+                cursor.execute(insert_sql, tuple(clean_row))
             
             conn.commit()
             cursor.close()
             conn.close()
             
             print(f"✅ Imported {len(df)} rows to {table_name}")
-            
-            # Clean up temp file
-            os.unlink(file_path)
-            
             return True
             
         except Exception as e:
@@ -271,11 +367,18 @@ class SharePointETL:
             temp_file_path = self.download_file(file_config)
             if temp_file_path:
                 # Import to PostgreSQL
-                if self.import_excel_to_postgres(temp_file_path, file_config['table_name']):
+                if self.import_excel_to_postgres(temp_file_path, file_config):
                     success_count += 1
                     print(f"✅ Successfully processed {file_config['filename']}")
                 else:
                     print(f"❌ Failed to import {file_config['filename']}")
+                    
+                # Clean up temp file
+                try:
+                    os.unlink(temp_file_path)
+                    print(f"🧹 Cleaned up temporary file")
+                except Exception as e:
+                    print(f"⚠️ Warning: Could not clean up temp file: {e}")
             else:
                 print(f"❌ Failed to download {file_config['filename']}")
         

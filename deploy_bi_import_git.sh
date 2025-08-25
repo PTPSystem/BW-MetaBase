@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Deploy Daily BI Import to Production Server
-# This script updates the production server with the new ETL functionality
+# Deploy Daily BI Import to Production Server (Git-based)
+# This script updates the production server by pulling from git
 #
 
 set -e  # Exit on any error
@@ -11,7 +11,7 @@ SERVER_IP="83.229.35.162"
 SERVER_USER="howardshen"
 PROJECT_PATH="/home/howardshen/BW-MetaBase"
 
-echo "🚀 Deploying Daily BI Import to Production Server"
+echo "🚀 Deploying Daily BI Import to Production Server (Git-based)"
 echo "📡 Server: $SERVER_USER@$SERVER_IP"
 echo "📁 Path: $PROJECT_PATH"
 echo
@@ -21,25 +21,14 @@ run_remote() {
     ssh "$SERVER_USER@$SERVER_IP" "$1"
 }
 
-# Function to copy file to server
-copy_to_server() {
-    local local_file="$1"
-    local remote_file="$2"
-    scp "$local_file" "$SERVER_USER@$SERVER_IP:$remote_file"
-}
+# 1. Pull latest changes from git
+echo "📋 Step 1: Pulling latest changes from git..."
+run_remote "cd $PROJECT_PATH && git pull origin main"
+echo "✅ Git pull completed"
 
-# 1. Ensure directories exist and copy new ETL files
-echo "📋 Step 1: Creating directories and copying new ETL files..."
-run_remote "mkdir -p $PROJECT_PATH/docker/etl $PROJECT_PATH/scripts $PROJECT_PATH/logs"
-copy_to_server "docker/etl/bi_daily_import.py" "$PROJECT_PATH/docker/etl/bi_daily_import.py"
-copy_to_server "docker/etl/Dockerfile" "$PROJECT_PATH/docker/etl/Dockerfile"
-copy_to_server "docker-compose.yml" "$PROJECT_PATH/docker-compose.yml"
-copy_to_server "scripts/daily_bi_import.sh" "$PROJECT_PATH/scripts/daily_bi_import.sh"
-echo "✅ Files copied successfully"
-
-# 2. Make script executable on server
-echo "📋 Step 2: Setting permissions..."
-run_remote "chmod +x $PROJECT_PATH/scripts/daily_bi_import.sh"
+# 2. Fix any ownership issues (if needed)
+echo "📋 Step 2: Ensuring proper permissions..."
+run_remote "cd $PROJECT_PATH && find . -name '*.sh' -exec chmod +x {} \;"
 echo "✅ Permissions set"
 
 # 3. Stop existing ETL container
@@ -75,6 +64,7 @@ echo
 echo "🎉 Daily BI Import Deployment Complete!"
 echo
 echo "📊 Summary:"
+echo "   ✅ Latest code pulled from git"
 echo "   ✅ New ETL script deployed (bi_daily_import.py)"
 echo "   ✅ Docker configuration updated"
 echo "   ✅ Daily cron job scheduled (6:00 AM)"
