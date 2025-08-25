@@ -214,6 +214,23 @@ class SharePointETL:
             except Exception as e:
                 print(f"⚠️ Method 2 failed: {str(e)}")
             
+            # Try method 2.5: Direct access to ITProject site using path
+            try:
+                itproject_url = f"https://graph.microsoft.com/v1.0/sites/{hostname}:/sites/ITProject"
+                print(f"🎯 Trying ITProject site path: {itproject_url}")
+                
+                itproject_response = requests.get(itproject_url, headers=headers)
+                print(f"ITProject response: {itproject_response.status_code}")
+                
+                if itproject_response.status_code == 200:
+                    site_data = itproject_response.json()
+                    print(f"✅ Found ITProject site: {site_data.get('displayName', 'Unknown')}")
+                    return self.explore_site_drives(site_data['id'], headers)
+                else:
+                    print(f"❌ Cannot access ITProject site: {itproject_response.text}")
+            except Exception as e:
+                print(f"⚠️ Method 2.5 failed: {str(e)}")
+            
             # Try method 3: List all accessible sites
             try:
                 sites_url = "https://graph.microsoft.com/v1.0/sites"
@@ -234,6 +251,12 @@ class SharePointETL:
                     print(f"❌ Cannot list sites: {sites_response.text}")
             except Exception as e:
                 print(f"⚠️ Method 3 failed: {str(e)}")
+            # Try method 4: Direct file access using sharing URL
+            try:
+                if self.try_direct_file_access(sharepoint_url, headers):
+                    return True
+            except Exception as e:
+                print(f"⚠️ Method 4 failed: {str(e)}")
                 
             return False
             
@@ -293,12 +316,85 @@ class SharePointETL:
                         download_url = file_item.get('@microsoft.graph.downloadUrl')
                         if download_url:
                             print(f"📥 Download URL available: {download_url[:50]}...")
+                    
+                    # If it's a folder, explore it
+                    if 'folder' in file_item:
+                        self.explore_folder(site_id, drive_id, file_item['id'], headers, depth=1)
                         
             else:
                 print(f"    ❌ Cannot list files: {files_response.status_code}")
                 
         except Exception as e:
             print(f"    ❌ Error listing files: {str(e)}")
+
+    def explore_folder(self, site_id, drive_id, folder_id, headers, depth=0):
+        """Explore a folder in SharePoint"""
+        if depth > 2:  # Limit recursion depth
+            return
+            
+        try:
+            folder_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/items/{folder_id}/children"
+            folder_response = requests.get(folder_url, headers=headers)
+            
+            if folder_response.status_code == 200:
+                items = folder_response.json()
+                indent = "  " * (depth + 2)
+                print(f"{indent}📁 Exploring folder with {len(items.get('value', []))} items:")
+                
+                for item in items.get('value', []):
+                    item_name = item.get('name', 'Unknown')
+                    item_size = item.get('size', 0)
+                    item_type = "📁 Folder" if 'folder' in item else "📄 File"
+                    print(f"{indent}  {item_type} {item_name} ({item_size} bytes)")
+                    
+                    # If it's an Excel file, show download info
+                    if item_name.endswith(('.xlsx', '.xls')):
+                        print(f"{indent}  🎯 Excel file found: {item_name}")
+                        download_url = item.get('@microsoft.graph.downloadUrl')
+                        if download_url:
+                            print(f"{indent}  📥 Can download: {download_url[:50]}...")
+                    
+                    # Recurse into subfolders
+                    if 'folder' in item and depth < 2:
+                        self.explore_folder(site_id, drive_id, item['id'], headers, depth + 1)
+                        
+        except Exception as e:
+            print(f"    ❌ Error exploring folder: {str(e)}")
+
+    def try_direct_file_access(self, sharepoint_url, headers):
+        """Try to access file directly using sharing URL"""
+        try:
+            print(f"🔗 Trying direct file access...")
+            
+            # Extract file ID from sharing URL if possible
+            if 'EWpbznFTspFPuqW9htsCyPQBipG9KfFhY7wCASWmifeaHw' in sharepoint_url:
+                # This appears to be the file/item ID
+                file_id = 'EWpbznFTspFPuqW9htsCyPQBipG9KfFhY7wCASWmifeaHw'
+                
+                # Try to get file info using Graph API
+                file_url = f"https://graph.microsoft.com/v1.0/shares/u!{file_id}/driveItem"
+                print(f"📡 Trying file URL: {file_url}")
+                
+                file_response = requests.get(file_url, headers=headers)
+                print(f"Direct file response: {file_response.status_code}")
+                
+                if file_response.status_code == 200:
+                    file_data = file_response.json()
+                    file_name = file_data.get('name', 'Unknown')
+                    file_size = file_data.get('size', 0)
+                    print(f"✅ Found file: {file_name} ({file_size} bytes)")
+                    
+                    download_url = file_data.get('@microsoft.graph.downloadUrl')
+                    if download_url:
+                        print(f"📥 Download URL: {download_url[:50]}...")
+                        return True
+                else:
+                    print(f"❌ Cannot access file directly: {file_response.text}")
+                    
+        except Exception as e:
+            print(f"❌ Error in direct file access: {str(e)}")
+            
+        return False
 
     def connect_to_database(self):
         """Connect to PostgreSQL database"""
@@ -355,7 +451,7 @@ def main():
         return
     
     # Step 2: Test SharePoint access with specific URL
-    sharepoint_url = "https://netorgft3835860.sharepoint.com/:x:/s/ITProject/EWpbznFTspFPuqW9htsCyPQBipG9KfFhY7wCASWmifeaHw?e=d72p86"
+    sharepoint_url = "https://netorgft3835860.sharepoint.com/:x:/s/ITProject/EWpbznFTspFPuqW9htsCyPQBipG9KfFhY7wCASWmifeaHw?e=DgpJHN"
     etl.test_sharepoint_access(sharepoint_url)
     
     # Step 3: Test database connection
